@@ -26,26 +26,43 @@ typedef struct Session {
     int logged_in;
 } Session;
 
-void udp_comms(Session *s, char* mensagem) {
+
+/** Mapa
+ * 1 - Valid Login
+ * 2 - Invalid Login
+ * 3 - User registered and logged in
+ * 
+ * 11 - Valid Logout
+ * 12 - No user logged in
+ * 13 - User not registered
+ * 14 - Wrong Password
+ * 
+ * 21 - Unregistered succesfully
+ * 22 - No user logged in
+ * 23 - No user registered
+ * 24 - Wrong Password
+ */
+
+int udp_comms(Session *s, char* mensagem, char* resposta, size_t tamanho){
 
     int lenght = strlen(mensagem);
 
     n = sendto(s->fd, mensagem, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
     if(n == -1) {
-        perror("Erro ao enviar mensagem");
-        exit(1);
+        perror("Error sending message");
+        return n;
     }
 
     addrlen = sizeof(addr);
-    n = recvfrom(s->fd, buffer, sizeof(buffer) - 1, 0, (struct sockaddr*)&addr, &addrlen);
-    //Timeout?
+    n = recvfrom(s->fd, resposta, tamanho - 1, 0, (struct sockaddr*)&addr, &addrlen);
+    //Timeout? - COmo configurar?
     if(n == -1) {
-        perror("Erro ao receber mensagem");
-        exit(1);
+        perror("Error receiving message");
+        return n;
     }
 
-    buffer[n] = '\0';
-    printf("%s", buffer);
+    resposta[n] = '\0';
+    return n;
 }
 
 
@@ -73,7 +90,7 @@ void commands (Session *s) {
             // Talvez simplificar
 
             if(strlen(uid) != 6) {
-                printf("UID Inválido.\n");
+                printf("Utilizador Inválido.\n");
                 continue;
             }
 
@@ -87,7 +104,7 @@ void commands (Session *s) {
             }
 
             if (!uid_valido) {
-                printf("UID inválido.\n");
+                printf("Utilizador inválido.\n");
                 continue;
             }
 
@@ -110,19 +127,67 @@ void commands (Session *s) {
                 continue;
             }
 
+            char resposta[128];
             char msg[128];
+            int code;
+
+            char codigo[8];
+            char estado[8];
             snprintf(msg, sizeof(msg), "LIN %s %s %s\n", uid, password, s->peerport);
-            udp_comms(s, msg);
-            //printf("Login válido\n");
+            code = udp_comms(s, msg, resposta, sizeof(resposta));
+            if (code < 0) continue;
+            if (sscanf(resposta, "%s %s", codigo, estado) !=2) continue;
+            if (strcmp(codigo, "RLI") != 0) printf("Error");
+
+            if (strcmp(estado, "OK") == 0) {
+                printf("Logged in Succesfully\n");
+                strcpy(s->uid, uid);
+                strcpy(s->password, password) ;
+                s->logged_in =1;
+            }
+
+            if (strcmp(estado, "NOK") == 0) printf("Incorrect Password\n");
+
+            if (strcmp(estado, "REG") == 0) {
+                printf("User registered\n");
+                strcpy(s->uid, uid);
+                strcpy(s->password, password) ;
+                s->logged_in =1;
+            }
         }
 
-        else if (strcmp(command, "logout") == 0) printf("Efetuar logout.\n");
+        else if (strcmp(command, "logout") == 0){ //printf("Efetuar logout.\n");
+            if (!s->logged_in) {
+                printf("User not logged in\n");
+                continue;
+            }
+            char resposta[128];
+            char msg[128];
+            int code;
+
+            char codigo[8];
+            char estado[8];
+            snprintf(msg, sizeof(msg), "LOU %s %s\n", s->uid, s->password);
+            code = udp_comms(s, msg, resposta, sizeof(resposta));
+            if (code < 0) continue;
+
+            if (sscanf(resposta, "%s %s", codigo, estado) != 2) continue;
+            if (strcmp(codigo, "RLO") != 0) printf("Error");
+            if (strcmp(estado, "OK") == 0){
+                printf("Logged out Succesfully\n");
+                s->logged_in = 0;
+            }
+            if (strcmp(estado, "NLG") == 0) printf("User not logged in\n");
+            if (strcmp(estado, "UNR") == 0) printf("User not registered\n");
+            if (strcmp(estado, "WRP") == 0) printf("Wrong password\n");
+
+        }
 
         else if (strcmp(command, "unregister") == 0) printf("Efetuar unregister.\n");
 
         else if (strcmp(command, "exit") == 0){ 
             printf("Efetuar exit.\n");
-            break;
+            break; //N deve funcionar se estiver logged in
         }
 
         else printf("Comando Inválido.\n");
