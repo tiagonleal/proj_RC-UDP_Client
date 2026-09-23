@@ -30,22 +30,25 @@ int udp_comms(Session *s, char* mensagem, char* resposta, size_t tamanho){
 
     int lenght = strlen(mensagem);
 
-    n = sendto(s->fd, mensagem, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
-    if(n == -1) {
-        perror("Error sending message");
+    for(int attempt = 0; attempt < 3; attempt++){
+        n = sendto(s->fd, mensagem, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
+        if(n == -1) {
+            perror("Error sending message");
+            continue;
+        }
+
+        addrlen = sizeof(addr);
+
+        n = recvfrom(s->fd, resposta, tamanho - 1, 0, (struct sockaddr*)&addr, &addrlen);
+        if(n == -1) {
+            perror("Error receiving message");
+            continue;
+        }
+
+        resposta[n] = '\0';
         return n;
     }
-
-    addrlen = sizeof(addr);
-    n = recvfrom(s->fd, resposta, tamanho - 1, 0, (struct sockaddr*)&addr, &addrlen);
-    //Timeout? - COmo configurar?
-    if(n == -1) {
-        perror("Error receiving message");
-        return n;
-    }
-
-    resposta[n] = '\0';
-    return n;
+    return -1;
 }
 
 
@@ -211,7 +214,10 @@ void commands (Session *s) {
                 printf("Logout first\n");
                 continue;
             }
-            else break;
+            else {
+                printf("Exiting");
+                break;
+            }
         }
 
         else printf("Invalid Command\n");
@@ -223,11 +229,13 @@ int main(int argc, char *argv[]){
 
     
     char* ip = "tejo.tecnico.ulisboa.pt"; 
-    char* port = "59000"; //Default value, can be changed by user input
-    //char* peerport = NULL;
+    char* port = "59000"; //Default values, can be changed by user input
     Session sessao;
-    memset(&sessao, 0, sizeof(sessao));
+    struct timeval tv;
 
+    memset(&sessao, 0, sizeof(sessao));
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-m") == 0 && i + 1 < argc) {
@@ -253,6 +261,8 @@ int main(int argc, char *argv[]){
 
     sessao.fd = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
     if(sessao.fd == -1) exit(1); /*error*/
+
+    setsockopt(sessao.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET; //IPv4
