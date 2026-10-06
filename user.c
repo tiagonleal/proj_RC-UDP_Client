@@ -26,38 +26,129 @@ typedef struct Session {
 } Session;
 
 
-int udp_comms(Session *s, char* mensagem, char* resposta, size_t tamanho){
+int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
-    int lenght = strlen(mensagem);
+    int lenght = strlen(message);
 
-    for(int attempt = 0; attempt < 3; attempt++){
-        n = sendto(s->fd, mensagem, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
+    for(int attempt = 0; attempt < 3; attempt++){ //Three attempts, each with a 5 second timeout.
+        n = sendto(s->fd, message, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
         if(n == -1) {
-            perror("Error sending message");
+            perror("Error sending message\n");
             continue;
         }
 
         addrlen = sizeof(addr);
 
-        n = recvfrom(s->fd, resposta, tamanho - 1, 0, (struct sockaddr*)&addr, &addrlen);
-        if(n == -1) {
-            perror("Error receiving message");
+        n = recvfrom(s->fd, answer, m_size - 1, 0, (struct sockaddr*)&addr, &addrlen);
+        if(n == -1){
+            perror("Error receiving message\n");
             continue;
         }
 
-        resposta[n] = '\0';
+        answer[n] = '\0';
         return n;
     }
+
+    perror("Error in communication\n");
     return -1;
+}
+
+
+void login(Session* s, char* input){
+
+    char uid[32];
+    char password[32];
+
+    //Checks for username
+    if (s->logged_in){
+        printf("Error. Already logged in\n");
+        return;
+    }
+
+    if(sscanf(input, "login %31s %31s", uid, password) != 2){ 
+        printf("Invalid Login\n");
+        return;
+    }
+
+    if(strlen(uid) != 6 || strspn(uid, "0123456789") != 6) {
+        printf("Invalid user\n");
+        return;
+    }
+
+    //Checks for password
+    if(strlen(password) != 8) {
+        printf("Invalid password\n");
+        return;
+    }
+
+    int valid_psswd = 1;
+    for(int i = 0; i < 8; i++) {
+        if(!isalnum((unsigned char)password[i])) {
+            valid_psswd = 0;
+            break;
+        }
+    }
+
+    if(!valid_psswd) {
+        printf("Invalid password\n");
+        return;
+    }
+
+    // Declare variables before sending
+    char msg[128]; //Message to send to server
+    char answer[128]; //Server's answer
+    int code; //Error code from the server
+    char answer_code[8]; //Server's response code
+    char answer_state[8]; //Server's response status
+
+    snprintf(msg, sizeof(msg), "LIN %s %s %s\n", uid, password, s->peerport);
+
+    code = udp_comms(s, msg, answer, sizeof(answer));
+    if(code < 0) return;
+
+    if(sscanf(answer, "%7s %7s", answer_code, answer_state) !=2) return;
+
+    
+    if(strcmp(answer_code, "RLI") != 0) {
+        printf("Error\n");
+        return;
+    }
+
+    int success = 0;
+    if(strcmp(answer_state, "OK") == 0){
+        printf("Logged in Succesfully\n");
+        success = 1;
+    }
+    
+    else if(strcmp(answer_state, "REG") == 0) {
+        printf("User registered\n");
+        success = 1;
+    }
+
+    else if(strcmp(answer_state, "NOK") == 0) printf("Incorrect Password\n");
+
+    else printf("Unkown error\n");
+
+
+    if(success) {
+        strcpy(s->uid, uid);
+        strcpy(s->password, password) ;
+        s->logged_in = 1;
+    }
+    return;
+
+}
+
+
+void logout(Session* s){
+
 }
 
 
 void commands (Session *s) {
     char input[256];
     char command[32];
-    char uid[32];
-    char password[32];
-    
+
     while(1){
         printf("> ");
 
@@ -66,86 +157,8 @@ void commands (Session *s) {
         if(sscanf(input, "%31s", command) != 1) continue;
 
         if(strcmp(command, "login") == 0){
-            
-            if (s->logged_in){
-                printf("Error. Already logged in\n");
-                continue;
-            }
-            if(sscanf(input, "login %31s %31s", uid, password) != 2){ 
-                printf("Invalid Login\n");
-                continue;
-            }
-
-            // Talvez simplificar
-
-            if(strlen(uid) != 6) {
-                printf("Invalid user\n");
-                continue;
-            }
-
-            int uid_valido = 1;
-
-            for(int i = 0; i < 6; i++) {
-                if(!isdigit((unsigned char)uid[i])) {
-                    uid_valido = 0;
-                    break;
-                }
-            }
-
-            if(!uid_valido) {
-                printf("Invalid user\n");
-                continue;
-            }
-
-            if(strlen(password) != 8) {
-                printf("Invalid password\n");
-                continue;
-            }
-
-            int password_valida = 1;
-
-            for(int i = 0; i < 8; i++) {
-                if(!isalnum((unsigned char)password[i])) {
-                    password_valida = 0;
-                    break;
-                }
-            }
-
-            if(!password_valida) {
-                printf("Invalid password\n");
-                continue;
-            }
-
-            char resposta[128];
-            char msg[128];
-            int code;
-
-            char codigo[8];
-            char estado[8];
-            snprintf(msg, sizeof(msg), "LIN %s %s %s\n", uid, password, s->peerport);
-            code = udp_comms(s, msg, resposta, sizeof(resposta));
-            if(code < 0) continue;
-            if(sscanf(resposta, "%7s %7s", codigo, estado) !=2) continue;
-            if(strcmp(codigo, "RLI") != 0) {
-                printf("Error");
-                continue;
-            }
-
-            if(strcmp(estado, "OK") == 0) {
-                printf("Logged in Succesfully\n");
-                strcpy(s->uid, uid);
-                strcpy(s->password, password) ;
-                s->logged_in = 1;
-            }
-
-            if(strcmp(estado, "NOK") == 0) printf("Incorrect Password\n");
-
-            if(strcmp(estado, "REG") == 0) {
-                printf("User registered\n");
-                strcpy(s->uid, uid);
-                strcpy(s->password, password) ;
-                s->logged_in =1;
-            }
+            login(s, input);
+            continue;
         }
 
         else if(strcmp(command, "logout") == 0){
