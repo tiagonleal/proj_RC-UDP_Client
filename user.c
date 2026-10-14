@@ -16,7 +16,7 @@ socklen_t addrlen;
 struct addrinfo hints;
 struct sockaddr_in addr;
 
-//Struct for the session's status
+//Struct para as funções saberem o estado da sessão
 typedef struct Session {
     int fd;
     struct addrinfo *res;
@@ -27,7 +27,7 @@ typedef struct Session {
 } Session;
 
 
-int udp_comms(Session* s, char* message, char* answer, size_t m_size){
+int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
     int lenght = strlen(message);
 
@@ -62,6 +62,7 @@ int valid_chars(const char *str, int len){
     }
     return 1;
 }
+
 
 void login(Session* s, char* input){
 
@@ -105,38 +106,39 @@ void login(Session* s, char* input){
 
     // Declare variables before sending
     char msg[128]; //Message to send to server
-    char answer[128]; //Server's answer
+    char resposta[128]; //Server's answer
     int code; //Error code from the server
-    char answer_code[8]; //Server's response code
-    char answer_state[8]; //Server's response status
+    char codigo[8]; //Server's response code
+    char estado[8]; //Server's response status
 
     snprintf(msg, sizeof(msg), "LIN %s %s %s\n", uid, password, s->peerport);
 
-    code = udp_comms(s, msg, answer, sizeof(answer));
+    code = udp_comms(s, msg, resposta, sizeof(resposta));
     if(code < 0) return;
 
-    if(sscanf(answer, "%7s %7s", answer_code, answer_state) !=2) return;
+    if(sscanf(resposta, "%7s %7s", codigo, estado) !=2) return;
 
     
-    if(strcmp(answer_code, "RLI") != 0) {
+    if(strcmp(codigo, "RLI") != 0) {
         printf("Error\n");
         return;
     }
 
     int success = 0;
-    if(strcmp(answer_state, "OK") == 0){
+    if(strcmp(estado, "OK") == 0){
         printf("Logged in Succesfully\n");
         success = 1;
     }
     
-    else if(strcmp(answer_state, "REG") == 0) {
+    else if(strcmp(estado, "REG") == 0) {
         printf("User registered\n");
         success = 1;
     }
 
-    else if(strcmp(answer_state, "NOK") == 0) printf("Incorrect Password\n");
+    else if(strcmp(estado, "NOK") == 0) printf("Incorrect Password\n");
 
-    else printf("Unkown error\n");
+    else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+    else printf("Unknown server response\n");
 
 
     if(success) {
@@ -149,55 +151,67 @@ void login(Session* s, char* input){
 }
 
 void logout(Session* s){
-        char answer[128];
+    if (!s->logged_in) {
+        printf("User not logged in\n");
+        return;
+        }
+        char resposta[128];
         char msg[128];
         int code;
 
-        char answer_code[8];
-        char status[8];
+        char codigo[8];
+        char estado[8];
         snprintf(msg, sizeof(msg), "LOU %s %s\n", s->uid, s->password);
-        code = udp_comms(s, msg, answer, sizeof(answer));
+        code = udp_comms(s, msg, resposta, sizeof(resposta));
         if (code < 0) return;
 
-        if (sscanf(answer, "%7s %7s", answer_code, status) != 2) return;
-        if (strcmp(answer_code, "RLO") != 0) {
+        if (sscanf(resposta, "%7s %7s", codigo, estado) != 2) return;
+        if (strcmp(codigo, "RLO") != 0) {
             printf("Error");
             return;
         }
-        if (strcmp(status, "OK") == 0){
+        if (strcmp(estado, "OK") == 0){
             printf("Logged out Succesfully\n");
             s->logged_in = 0;
         }
-        if (strcmp(status, "NLG") == 0) printf("User not logged in\n");
-        if (strcmp(status, "UNR") == 0) printf("User not registered\n");
-        if (strcmp(status, "WRP") == 0) printf("Wrong password\n");           
+        else if (strcmp(estado, "NLG") == 0) printf("User not logged in\n");
+        else if (strcmp(estado, "UNR") == 0) printf("User not registered\n");
+        else if (strcmp(estado, "WRP") == 0) printf("Wrong password\n");
+        else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+        else printf("Unknown server response\n");
 }
 
 void unregister(Session* s){
-    char answer[128];
+    if (!s->logged_in) {
+        printf("User not logged in\n");
+        return;
+    }
+    char resposta[128];
     char msg[128];
     int code;
 
-    char answer_code[8];
-    char status[8];
+    char codigo[8];
+    char estado[8];
 
     snprintf(msg, sizeof(msg), "UNR %s %s\n", s->uid, s->password);
-    code = udp_comms(s, msg, answer, sizeof(answer));
+    code = udp_comms(s, msg, resposta, sizeof(resposta));
 
     if (code < 0) return;
 
-    if (sscanf(answer, "%7s %7s", answer_code, status) != 2) return;
-    if (strcmp(answer_code, "RUR") != 0) {
+    if (sscanf(resposta, "%7s %7s", codigo, estado) != 2) return;
+    if (strcmp(codigo, "RUR") != 0) {
         printf("Error"); 
         return;
     }
-    if (strcmp(status, "OK") == 0){
+    if (strcmp(estado, "OK") == 0){
         printf("Unregistered Succesfully\n");
         s->logged_in = 0;
     }
-    else if(strcmp(status, "NOK") == 0) printf("User not logged in\n");
-    else if(strcmp(status, "UNR") == 0) printf("User not registered\n");
-    else if(strcmp(status, "WRP") == 0) printf("Wrong password\n");
+    else if(strcmp(estado, "NOK") == 0) printf("User not logged in\n");
+    else if(strcmp(estado, "UNR") == 0) printf("User not registered\n");
+    else if(strcmp(estado, "WRP") == 0) printf("Wrong password\n");
+    else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+    else printf("Unknown server response\n");
 }
 
 void publish(Session* s, char* input){
@@ -227,14 +241,12 @@ void publish(Session* s, char* input){
             printf("Invalid File Name\n");
             return;
         }
-
+    }
     if (!valid_chars(label, strlen(label)) || strlen(label) > 20){
         printf("Invalid Label\n");
         return;
     }
 
-
-    }
     struct stat file_info;
     if (stat(filename, &file_info) != 0 || file_info.st_size > 10000000) {
         printf("File not available\n");
@@ -262,7 +274,13 @@ void publish(Session* s, char* input){
     else if(strcmp(answer_state, "WRP") == 0) printf("Wrong password\n");
     else printf("Unknown error\n");
 }
+
 void remove_resource(Session* s, char* filename){
+    if (!s->logged_in) {
+        printf("User not logged in\n");
+        return;
+    }
+
     char resposta[128];
     char msg[128];
     int code;
@@ -282,16 +300,50 @@ void remove_resource(Session* s, char* filename){
     }
 
     if (strcmp(estado, "OK") == 0){
-        printf("Resource Removed Successfully\n");
-        s->logged_in = 0;
+        printf("Resource remove Successfully\n");
     }
     else if(strcmp(estado, "NLG") == 0) printf("User not logged in\n");
     else if(strcmp(estado, "UNR") == 0) printf("User not registered\n");
     else if(strcmp(estado, "WRP") == 0) printf("Wrong password\n");
     else if(strcmp(estado, "NOK") == 0) printf("Resource not published\n");
+    else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+    else printf("Unknown server response\n");
 
 }
 
+void list(Session* s){
+    char resposta[2048];
+    char msg[128];
+    int code;
+
+    char codigo[8];
+    char estado[8];
+    int pos;
+
+    snprintf(msg, sizeof(msg), "LST\n");
+    code = udp_comms(s, msg, resposta, sizeof(resposta));
+
+    if (code < 0) return;
+    if (sscanf(resposta, "%7s %7s %n", codigo, estado, &pos) != 2) return;
+
+    if (strcmp(codigo, "RLS") != 0) {
+        printf("Error"); 
+        return;
+    }
+
+    if (strcmp(estado, "OK") == 0) {
+
+        char *token = strtok(resposta + pos, " \n");
+
+        while (token != NULL) {
+            printf("%s\n", token);
+            token = strtok(NULL, " \n");
+        }
+    }
+    else if(strcmp(estado, "NOK") == 0) printf("No resources available\n");
+    else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+    else printf("Unknown server response\n");
+}
 
 void commands (Session *s) {
     char input[256];
@@ -319,20 +371,6 @@ void commands (Session *s) {
             continue;
         }
 
-        else if(strcmp(command, "exit") == 0){ 
-            if(s->logged_in) {
-                printf("Logout first\n");
-                continue;
-            }
-            else {
-                printf("Exiting");
-                break;
-            }
-        }
-        else if(strcmp(command, "publish") == 0){
-            publish(s, input);
-            continue;
-        } 
         else if(strcmp(command, "remove") == 0){
             char filename[128];
             if(sscanf(input, "remove %127s", filename) != 1) {
@@ -343,6 +381,27 @@ void commands (Session *s) {
             continue;
         }
 
+        else if(strcmp(command, "list") == 0){
+            list(s);
+            continue;
+        }
+
+        else if(strcmp(command, "publish") == 0){
+            publish(s, input);
+            continue;
+        } 
+
+        else if(strcmp(command, "exit") == 0){ 
+            if(s->logged_in) {
+                printf("Logout first\n");
+                continue;
+            }
+            else {
+                printf("Exiting");
+                break;
+            }
+        }
+
         else printf("Invalid Command\n");
     }
 }
@@ -350,7 +409,6 @@ void commands (Session *s) {
 
 int main(int argc, char *argv[]){
 
-    
     char* ip = "tejo.tecnico.ulisboa.pt"; 
     char* port = "59000"; //Default values, can be changed by user input
     Session sessao;
