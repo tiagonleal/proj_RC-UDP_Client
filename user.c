@@ -8,6 +8,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 int errcode;
 ssize_t n;
@@ -53,6 +54,14 @@ int udp_comms(Session* s, char* message, char* answer, size_t m_size){
     return -1;
 }
 
+int valid_chars(const char *str, int len){
+    for (int i = 0; i < len; i++){
+        char c = str[i];
+        if (!(isalnum((unsigned char)c) || c == '-' || c == '_'))
+            return 0;
+    }
+    return 1;
+}
 
 void login(Session* s, char* input){
 
@@ -144,14 +153,14 @@ void logout(Session* s){
         char msg[128];
         int code;
 
-        char code[8];
+        char answer_code[8];
         char status[8];
         snprintf(msg, sizeof(msg), "LOU %s %s\n", s->uid, s->password);
         code = udp_comms(s, msg, answer, sizeof(answer));
         if (code < 0) return;
 
-        if (sscanf(answer, "%7s %7s", code, status) != 2) return;
-        if (strcmp(code, "RLO") != 0) {
+        if (sscanf(answer, "%7s %7s", answer_code, status) != 2) return;
+        if (strcmp(answer_code, "RLO") != 0) {
             printf("Error");
             return;
         }
@@ -169,7 +178,7 @@ void unregister(Session* s){
     char msg[128];
     int code;
 
-    char code[8];
+    char answer_code[8];
     char status[8];
 
     snprintf(msg, sizeof(msg), "UNR %s %s\n", s->uid, s->password);
@@ -177,8 +186,8 @@ void unregister(Session* s){
 
     if (code < 0) return;
 
-    if (sscanf(answer, "%7s %7s", code, status) != 2) return;
-    if (strcmp(code, "RUR") != 0) {
+    if (sscanf(answer, "%7s %7s", answer_code, status) != 2) return;
+    if (strcmp(answer_code, "RUR") != 0) {
         printf("Error"); 
         return;
     }
@@ -190,7 +199,7 @@ void unregister(Session* s){
     else if(strcmp(status, "UNR") == 0) printf("User not registered\n");
     else if(strcmp(status, "WRP") == 0) printf("Wrong password\n");
 }
-/**
+
 void publish(Session* s, char* input){
     if(!s->logged_in) {
         printf("User not logged in\n");
@@ -203,7 +212,31 @@ void publish(Session* s, char* input){
         return;
     }
 
-    if(access(filename, F_OK) != 0){
+    if (strlen(filename) > 24){
+        printf("File name too big\n");
+        return;
+    }
+    char* dot = strrchr(filename, '.');
+    if (dot == NULL || dot == filename || strlen(dot + 1) != 3 || !valid_chars(filename, dot - filename)){
+        printf("Invalid File Name\n");
+        return;
+    }
+
+    for (int i = 1; i <= 3; i++){
+        if (!isalnum((unsigned char)dot[i])){
+            printf("Invalid File Name\n");
+            return;
+        }
+
+    if (!valid_chars(label, strlen(label)) || strlen(label) > 20){
+        printf("Invalid Label\n");
+        return;
+    }
+
+
+    }
+    struct stat file_info;
+    if (stat(filename, &file_info) != 0 || file_info.st_size > 10000000) {
         printf("File not available\n");
         return;
     }
@@ -213,13 +246,23 @@ void publish(Session* s, char* input){
     int code; //Error code from the server
     char answer_code[8]; //Server's response code
     char answer_state[8]; //Server's response status
-    snprintf(msg, sizeof(msg), "PUB %s %s %s %s %s\n", s->uid, s->password, filename, label);
+    snprintf(msg, sizeof(msg), "PUB %s %s %s %d %s\n", s->uid, s->password, filename, (int)file_info.st_size, label);
     code = udp_comms(s, msg, answer, sizeof(answer));
     if (code < 0) return;
 
+    if (sscanf(answer, "%7s %7s", answer_code, answer_state) != 2) return;
+    if (strcmp(answer_code, "RPB") != 0) {
+        printf("Error\n");
+        return;
+    }
+    if (strcmp(answer_state, "OK") == 0) printf("Published Successfully\n");
+    else if(strcmp(answer_state, "NOK") == 0) printf("Could not publish\n");
+    else if(strcmp(answer_state, "NLG") == 0) printf("User not logged in\n");
+    else if(strcmp(answer_state, "UNR") == 0) printf("User not registered\n");
+    else if(strcmp(answer_state, "WRP") == 0) printf("Wrong password\n");
+    else printf("Unknown error\n");
 }
-*/
-void remove(Session* s, char* filename){
+void remove_resource(Session* s, char* filename){
     char resposta[128];
     char msg[128];
     int code;
@@ -296,7 +339,7 @@ void commands (Session *s) {
                 printf("Invalid remove command\n");
                 continue;
             }
-            remove(s, filename);
+            remove_resource(s, filename);
             continue;
         }
 
