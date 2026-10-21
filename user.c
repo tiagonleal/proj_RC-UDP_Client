@@ -57,6 +57,61 @@ int udp_comms(Session *s, char* message, char* answer, size_t m_size){
     return -1;
 }
 
+int tcp_comms(Session *s, char* message, char* answer, size_t m_size){
+    
+    s->fd_tcp= socket(AF_INET, SOCK_STREAM, 0);
+    if(s->fd_tcp == -1)exit(1);
+
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET; //IPv4
+    hints.ai_socktype = SOCK_STREAM; //TCP socket
+
+    errcode = getaddrinfo(s->ip, s->port, &hints, &s->res);
+    if (errcode != 0) exit(1);
+
+    errcode = connect(s->fd_tcp, s->res->ai_addr, s->res->ai_addrlen);
+    if (errcode == -1) exit(1);
+
+    int lenght = strlen(message);
+    int total_sent = 0;
+
+    while (total_sent < lenght) {
+        n = write(s->fd_tcp, message + total_sent, lenght - total_sent);
+
+        if (n <= 0) {
+            perror("Error writing");
+            close(s->fd_tcp);
+            return -1;
+        }
+
+        total_sent += n;
+    }
+
+    int total_received = 0;
+
+    while (total_received < m_size - 1) {
+        n = read(s->fd_tcp, answer + total_received, m_size - 1 - total_received);
+
+        if (n < 0) {
+            perror("Error reading");
+            close(s->fd_tcp);
+            return -1;
+        } else if (n == 0) {
+            break; // Connection closed
+        }
+
+        total_received += n;
+
+        if (memchr(answer, '\n', total_received) != NULL) {
+            break;
+        }
+    }
+    answer[total_received] = '\0';
+
+    close(s->fd_tcp);
+    return total_received;
+}
+
 int valid_chars(const char *str, int len){
     for (int i = 0; i < len; i++){
         char c = str[i];
@@ -65,7 +120,6 @@ int valid_chars(const char *str, int len){
     }
     return 1;
 }
-
 
 void login(Session* s, char* input){
 
