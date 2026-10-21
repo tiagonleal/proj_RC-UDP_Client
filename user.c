@@ -10,15 +10,12 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+struct addrinfo hints;
 int errcode;
 ssize_t n;
-socklen_t addrlen;
-struct addrinfo hints;
-struct sockaddr_in addr;
 
 //Struct para as funções saberem o estado da sessão
 typedef struct Session {
-    int fd_udp;
     int fd_tcp;
     struct addrinfo *res;
     char peerport[16];
@@ -32,10 +29,29 @@ typedef struct Session {
 
 int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
-    int lenght = strlen(message);
+    size_t lenght = strlen(message);
+    ssize_t n;
+    socklen_t addrlen;
+    struct sockaddr_in addr;
+    
+    int fd_udp = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
+    if(fd_udp == -1){
+        perror("socket");
+        return -1;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+
+    if(setsockopt(fd_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == -1){
+        perror("setsockopt");
+        close(fd_udp);
+        return -1;
+    }
 
     for(int attempt = 0; attempt < 3; attempt++){ //Three attempts, each with a 5 second timeout.
-        n = sendto(s->fd_udp, message, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
+        n = sendto(fd_udp, message, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
         if(n == -1) {
             perror("Error sending message\n");
             continue;
@@ -43,22 +59,27 @@ int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
         addrlen = sizeof(addr);
 
-        n = recvfrom(s->fd_udp, answer, m_size - 1, 0, (struct sockaddr*)&addr, &addrlen);
+        n = recvfrom(fd_udp, answer, m_size - 1, 0, (struct sockaddr*)&addr, &addrlen);
         if(n == -1){
             perror("Error receiving message\n");
             continue;
         }
 
         answer[n] = '\0';
+
+        close(fd_udp);
         return n;
     }
 
     perror("Error in communication\n");
+
+    close(fd_udp);  
     return -1;
 }
 
+
 int tcp_comms(Session *s, char* message, char* answer, size_t m_size){
-    
+
     s->fd_tcp= socket(AF_INET, SOCK_STREAM, 0);
     if(s->fd_tcp == -1)exit(1);
 
@@ -66,8 +87,8 @@ int tcp_comms(Session *s, char* message, char* answer, size_t m_size){
     hints.ai_family = AF_INET; //IPv4
     hints.ai_socktype = SOCK_STREAM; //TCP socket
 
-    errcode = getaddrinfo(s->ip, s->port, &hints, &s->res);
-    if (errcode != 0) exit(1);
+    errcode = getaddrinfo(s->ip, s->port, &hints, &s->res); //////REDUNDANTE
+    if (errcode != 0) exit(1); ///////N PODE FECHAR
 
     errcode = connect(s->fd_tcp, s->res->ai_addr, s->res->ai_addrlen);
     if (errcode == -1) exit(1);
@@ -85,31 +106,31 @@ int tcp_comms(Session *s, char* message, char* answer, size_t m_size){
         }
 
         total_sent += n;
+}
+
+size_t total_received = 0;
+
+while (total_received < m_size - 1) {
+    n = read(s->fd_tcp, answer + total_received, m_size - 1 - total_received);
+
+    if (n < 0) {
+        perror("Error reading");
+        close(s->fd_tcp);
+        return -1;
+    } else if (n == 0) {
+        break; // Connection closed
     }
 
-    int total_received = 0;
+    total_received += n;
 
-    while (total_received < m_size - 1) {
-        n = read(s->fd_tcp, answer + total_received, m_size - 1 - total_received);
-
-        if (n < 0) {
-            perror("Error reading");
-            close(s->fd_tcp);
-            return -1;
-        } else if (n == 0) {
-            break; // Connection closed
-        }
-
-        total_received += n;
-
-        if (memchr(answer, '\n', total_received) != NULL) {
-            break;
-        }
+    if (memchr(answer, '\n', total_received) != NULL) {
+        break;
     }
-    answer[total_received] = '\0';
+}
+answer[total_received] = '\0';
 
-    close(s->fd_tcp);
-    return total_received;
+close(s->fd_tcp);
+return total_received;
 }
 
 int valid_chars(const char *str, int len){
@@ -120,6 +141,7 @@ int valid_chars(const char *str, int len){
     }
     return 1;
 }
+
 
 void login(Session* s, char* input){
 
@@ -463,13 +485,10 @@ void commands (Session *s) {
 int main(int argc, char *argv[]){
 
     Session sessao;
+    memset(&sessao, 0, sizeof(sessao));
+
     sessao.ip = "tejo.tecnico.ulisboa.pt"; 
     sessao.port = "59000"; //Default values, can be changed by user input
-    struct timeval tv;
-
-    memset(&sessao, 0, sizeof(sessao));
-    tv.tv_sec = 5;
-    tv.tv_usec = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-m") == 0 && i + 1 < argc) {
@@ -486,17 +505,10 @@ int main(int argc, char *argv[]){
 
     int p = atoi(sessao.peerport);
     int dp = atoi(sessao.port);
-
     if (sessao.peerport[0] == '\0' || p < 1 || p > 65535 || dp < 1 || dp > 65535) {
         printf("Invalid Arguments\n");
         exit(1);
     }
-
-
-    sessao.fd_udp = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
-    if(sessao.fd_udp == -1) exit(1); /*error*/
-
-    setsockopt(sessao.fd_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET; //IPv4
@@ -508,5 +520,4 @@ int main(int argc, char *argv[]){
     commands(&sessao);
 
     freeaddrinfo(sessao.res);
-    close(sessao.fd_udp);
 }
