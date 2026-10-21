@@ -248,7 +248,8 @@ void publish(Session* s, char* input){
     }
 
     struct stat file_info;
-    if (stat(filename, &file_info) != 0 || file_info.st_size > 10000000) {
+    if (stat(filename, &file_info) != 0 || !S_ISREG(file_info.st_mode) ||
+            file_info.st_size > 10000000 || file_info.st_size < 0) {
         printf("File not available\n");
         return;
     }
@@ -272,6 +273,7 @@ void publish(Session* s, char* input){
     else if(strcmp(answer_state, "NLG") == 0) printf("User not logged in\n");
     else if(strcmp(answer_state, "UNR") == 0) printf("User not registered\n");
     else if(strcmp(answer_state, "WRP") == 0) printf("Wrong password\n");
+    else if(strcmp(answer_state, "ERR") == 0) printf("Protocol error\n");
     else printf("Unknown error\n");
 }
 
@@ -318,13 +320,12 @@ void list(Session* s){
 
     char codigo[8];
     char estado[8];
-    int pos;
 
     snprintf(msg, sizeof(msg), "LST\n");
     code = udp_comms(s, msg, resposta, sizeof(resposta));
 
     if (code < 0) return;
-    if (sscanf(resposta, "%7s %7s %n", codigo, estado, &pos) != 2) return;
+    if (sscanf(resposta, "%7s %7s", codigo, estado) != 2) return;
 
     if (strcmp(codigo, "RLS") != 0) {
         printf("Error"); 
@@ -333,12 +334,7 @@ void list(Session* s){
 
     if (strcmp(estado, "OK") == 0) {
 
-        char *token = strtok(resposta + pos, " \n");
-
-        while (token != NULL) {
-            printf("%s\n", token);
-            token = strtok(NULL, " \n");
-        }
+    printf("Files: %s\n", resposta+ 7); // RLS OK são 7 caracteres    
     }
     else if(strcmp(estado, "NOK") == 0) printf("No resources available\n");
     else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
