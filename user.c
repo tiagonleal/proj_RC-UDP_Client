@@ -18,12 +18,15 @@ struct sockaddr_in addr;
 
 //Struct para as funções saberem o estado da sessão
 typedef struct Session {
-    int fd;
+    int fd_udp;
+    int fd_tcp;
     struct addrinfo *res;
     char peerport[16];
     char uid[7];
     char password[9];
     int logged_in;
+    char *ip;
+    char *port;
 } Session;
 
 
@@ -32,7 +35,7 @@ int udp_comms(Session *s, char* message, char* answer, size_t m_size){
     int lenght = strlen(message);
 
     for(int attempt = 0; attempt < 3; attempt++){ //Three attempts, each with a 5 second timeout.
-        n = sendto(s->fd, message, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
+        n = sendto(s->fd_udp, message, lenght, 0, s->res->ai_addr, s->res->ai_addrlen);
         if(n == -1) {
             perror("Error sending message\n");
             continue;
@@ -40,7 +43,7 @@ int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
         addrlen = sizeof(addr);
 
-        n = recvfrom(s->fd, answer, m_size - 1, 0, (struct sockaddr*)&addr, &addrlen);
+        n = recvfrom(s->fd_udp, answer, m_size - 1, 0, (struct sockaddr*)&addr, &addrlen);
         if(n == -1){
             perror("Error receiving message\n");
             continue;
@@ -405,9 +408,9 @@ void commands (Session *s) {
 
 int main(int argc, char *argv[]){
 
-    char* ip = "tejo.tecnico.ulisboa.pt"; 
-    char* port = "59000"; //Default values, can be changed by user input
     Session sessao;
+    sessao.ip = "tejo.tecnico.ulisboa.pt"; 
+    sessao.port = "59000"; //Default values, can be changed by user input
     struct timeval tv;
 
     memset(&sessao, 0, sizeof(sessao));
@@ -419,16 +422,16 @@ int main(int argc, char *argv[]){
             strcpy(sessao.peerport, argv[i + 1]);
             i++;
         } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            port = argv[i + 1];
+            sessao.port = argv[i + 1];
             i++;
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            ip = argv[i + 1];
+            sessao.ip = argv[i + 1];
             i++;
         }
     }
 
     int p = atoi(sessao.peerport);
-    int dp = atoi(port);
+    int dp = atoi(sessao.port);
 
     if (sessao.peerport[0] == '\0' || p < 1 || p > 65535 || dp < 1 || dp > 65535) {
         printf("Invalid Arguments\n");
@@ -436,20 +439,20 @@ int main(int argc, char *argv[]){
     }
 
 
-    sessao.fd = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
-    if(sessao.fd == -1) exit(1); /*error*/
+    sessao.fd_udp = socket(AF_INET, SOCK_DGRAM, 0); //UDP socket
+    if(sessao.fd_udp == -1) exit(1); /*error*/
 
-    setsockopt(sessao.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(sessao.fd_udp, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET; //IPv4
     hints.ai_socktype = SOCK_DGRAM; //UDP socket
 
-    errcode = getaddrinfo(ip, port, &hints, &sessao.res);
+    errcode = getaddrinfo(sessao.ip, sessao.port, &hints, &sessao.res);
     if (errcode != 0) exit(1); /*error*/
 
     commands(&sessao);
 
     freeaddrinfo(sessao.res);
-    close(sessao.fd);
+    close(sessao.fd_udp);
 }
