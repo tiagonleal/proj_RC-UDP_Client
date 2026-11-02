@@ -26,6 +26,9 @@ typedef struct Session {
     char *port;
 } Session;
 
+//Getaddrinfo tem de ser ajustado
+//variáveis globais têm de ser revistas
+//error(1) só pode existir no main
 
 int udp_comms(Session *s, char* message, char* answer, size_t m_size){
 
@@ -77,62 +80,85 @@ int udp_comms(Session *s, char* message, char* answer, size_t m_size){
     return -1;
 }
 
-
-int tcp_comms(Session *s, char* message, char* answer, size_t m_size){
+int tcp_comms(Session* s, char* message, char* answer, size_t m_size){
 
     s->fd_tcp= socket(AF_INET, SOCK_STREAM, 0);
+
     if(s->fd_tcp == -1)exit(1);
 
     memset(&hints, 0, sizeof hints);
+
     hints.ai_family = AF_INET; //IPv4
+
     hints.ai_socktype = SOCK_STREAM; //TCP socket
 
-    errcode = getaddrinfo(s->ip, s->port, &hints, &s->res); //////REDUNDANTE
-    if (errcode != 0) exit(1); ///////N PODE FECHAR
+    errcode = getaddrinfo(s->ip, s->port, &hints, &s->res);
+
+    if (errcode != 0) exit(1);
 
     errcode = connect(s->fd_tcp, s->res->ai_addr, s->res->ai_addrlen);
+
     if (errcode == -1) exit(1);
 
     int lenght = strlen(message);
+
     int total_sent = 0;
 
     while (total_sent < lenght) {
+
         n = write(s->fd_tcp, message + total_sent, lenght - total_sent);
 
         if (n <= 0) {
+
             perror("Error writing");
+
             close(s->fd_tcp);
+
             return -1;
+
         }
 
         total_sent += n;
-}
 
-size_t total_received = 0;
-
-while (total_received < m_size - 1) {
-    n = read(s->fd_tcp, answer + total_received, m_size - 1 - total_received);
-
-    if (n < 0) {
-        perror("Error reading");
-        close(s->fd_tcp);
-        return -1;
-    } else if (n == 0) {
-        break; // Connection closed
     }
 
-    total_received += n;
+    int total_received = 0;
 
-    if (memchr(answer, '\n', total_received) != NULL) {
-        break;
+    while (total_received < (int)m_size - 1) {
+
+        n = read(s->fd_tcp, answer + total_received, (int)m_size - 1 - total_received);
+
+        if (n < 0) {
+
+            perror("Error reading");
+
+            close(s->fd_tcp);
+
+            return -1;
+
+        } else if (n == 0) {
+
+            break; // Connection closed
+
+        }
+
+        total_received += n;
+
+        if (memchr(answer, '\n', total_received) != NULL) {
+
+            break;
+
+        }
+
     }
-}
-answer[total_received] = '\0';
 
-close(s->fd_tcp);
-return total_received;
-}
+    answer[total_received] = '\0';
 
+    close(s->fd_tcp);
+
+    return total_received;
+
+}
 int valid_chars(const char *str, int len){
     for (int i = 0; i < len; i++){
         char c = str[i];
@@ -420,6 +446,34 @@ void list(Session* s){
     else printf("Unknown server response\n");
 }
 
+void versions(Session* s, char* filename){
+    char resposta[2048];
+    char msg[128];
+    int code;
+
+    char codigo[4];
+    char estado[4];
+
+    snprintf(msg, sizeof(msg), "VRS %s\n", filename);
+    code = tcp_comms(s, msg, resposta, sizeof(resposta));
+
+    if (code < 0) return;
+    if (sscanf(resposta, "%3s %3s", codigo, estado) != 2) return;
+
+        if (strcmp(codigo, "RVR") != 0) {
+        printf("Error"); 
+        return;
+    }
+
+    if (strcmp(estado, "OK") == 0) {
+
+    printf("Metadata: %s\n", resposta+ 7); // RVR OK são 7 caracteres
+    }
+    else if(strcmp(estado, "NOK") == 0) printf("No peer available\n");
+    else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
+    else printf("Unknown server response\n");
+}
+
 void commands (Session *s) {
     char input[256];
     char command[32];
@@ -476,7 +530,15 @@ void commands (Session *s) {
                 break;
             }
         }
-
+        else if(strcmp(command, "versions") == 0){
+            char filename[128];
+            if(sscanf(input, "versions %127s", filename) != 1) {
+                printf("Invalid versions command\n");
+                continue;
+            }
+            versions(s, filename);
+            continue;
+        }
         else printf("Invalid Command\n");
     }
 }
