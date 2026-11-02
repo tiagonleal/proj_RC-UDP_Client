@@ -438,9 +438,35 @@ void list(Session* s){
     }
 
     if (strcmp(estado, "OK") == 0) {
+        printf("\nAVAILABLE FILES\n");
+        printf("+--------------------------+--------------------------+--------------------------+--------------------------+\n");
 
-    printf("Files: %s\n", resposta+ 7); // RLS OK são 7 caracteres    
+        char *token = strtok(resposta + 7, " \n"); // RLS OK são 7 caracteres   
+        int col = 0;
+
+        while (token != NULL) {
+
+            printf("| %-24s ", token);
+            col++;
+
+            if (col == 4) {
+                printf("|\n");
+                col = 0;
+            }
+
+            token = strtok(NULL, " \n");
+        }
+        if (col != 0) {
+            while (col < 4) {
+                printf("| %-24s ", "");
+                col++;
+            }
+            printf("|\n");
+        }
+
+        printf("+--------------------------+--------------------------+--------------------------+--------------------------+\n\n");
     }
+
     else if(strcmp(estado, "NOK") == 0) printf("No resources available\n");
     else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
     else printf("Unknown server response\n");
@@ -467,8 +493,45 @@ void versions(Session* s, char* filename){
 
     if (strcmp(estado, "OK") == 0) {
 
-    printf("Metadata: %s\n", resposta+ 7); // RVR OK são 7 caracteres
+        printf("\nFILE VERSIONS: %s\n", filename);
+        printf("+--------+--------------+----------------------+--------------------------+--------------+\n");
+        printf("| %-6s | %-12s | %-20s | %-24s | %-12s |\n",
+            "UID", "Size (bytes)", "Label", "Publication Time", "Availability");
+        printf("+--------+--------------+----------------------+--------------------------+--------------+\n");
+
+        char *uid = strtok(resposta + 7, " \n");
+
+        while (uid != NULL) {
+
+            char *size = strtok(NULL, " \n");
+            char *label = strtok(NULL, " \n");
+            char *publication_time = strtok(NULL, " \n");
+            char *availability = strtok(NULL, " \n");
+
+            if (size == NULL || label == NULL ||
+                publication_time == NULL || availability == NULL) {
+                printf("Incomplete server response\n");
+                return;
+            }
+
+            char *status;
+
+            if (strcmp(availability, "AVL") == 0)
+                status = "Available";
+            else if (strcmp(availability, "NAV") == 0)
+                status = "Unavailable";
+            else
+                status = "Unknown";
+
+            printf("| %-6s | %-12s | %-20s | %-24s | %-12s |\n",
+                uid, size, label, publication_time, status);
+
+            uid = strtok(NULL, " \n");
+        }
+
+        printf("+--------+--------------+----------------------+--------------------------+--------------+\n\n");
     }
+
     else if(strcmp(estado, "NOK") == 0) printf("No peer available\n");
     else if(strcmp(estado, "ERR") == 0) printf("Protocol error\n");
     else printf("Unknown server response\n");
@@ -526,7 +589,7 @@ void commands (Session *s) {
                 continue;
             }
             else {
-                printf("Exiting");
+                printf("Exiting\n");
                 break;
             }
         }
@@ -543,6 +606,44 @@ void commands (Session *s) {
     }
 }
 
+void print_welcome(Session *s) {
+
+    char ds_ip[INET_ADDRSTRLEN] = "Unknown";
+
+    // Get the resolved IPv4 address
+    if (s->res != NULL && s->res->ai_family == AF_INET) {
+        struct sockaddr_in *addr =
+            (struct sockaddr_in *)s->res->ai_addr;
+
+        inet_ntop(AF_INET, &addr->sin_addr,
+                  ds_ip, sizeof(ds_ip));
+    }
+
+    printf("\n");
+    printf("==============================================================\n");
+    printf("                       NetBoX CLIENT                          \n");
+    printf("==============================================================\n\n");
+
+    printf("SERVER INFORMATION\n");
+    printf("DS Host: %s\n", s->ip);
+    printf("DS IP: %s\n", ds_ip);
+    printf("DS Port: %s\n", s->port);
+    printf("Peer TCP Port_ %s\n\n", s->peerport);
+
+    printf(" AVAILABLE COMMANDS\n\n");
+    printf(" %-32s  %-32s \n", "Command", "Description");
+    printf("+---------------------------------+----------------------------------+\n");
+    printf("| %-31s | %-32s |\n", "login <UID> <password>", "Login / Register");
+    printf("| %-31s | %-32s |\n", "logout", "Logout");
+    printf("| %-31s | %-32s |\n", "unregister", "Delete registration");
+    printf("| %-31s | %-32s |\n", "publish <filename> <label>", "Publish a file");
+    printf("| %-31s | %-32s |\n", "remove <filename>", "Remove a file");
+    printf("| %-31s | %-32s |\n", "list", "List all files");
+    printf("| %-31s | %-32s |\n", "versions <filename>", "View file versions");
+    printf("| %-31s | %-32s |\n", "exit", "Exit application");
+    printf("+---------------------------------+----------------------------------+\n\n");
+
+}
 
 int main(int argc, char *argv[]){
 
@@ -578,6 +679,8 @@ int main(int argc, char *argv[]){
 
     errcode = getaddrinfo(sessao.ip, sessao.port, &hints, &sessao.res);
     if (errcode != 0) exit(1); /*error*/
+
+    print_welcome(&sessao);
 
     commands(&sessao);
 
