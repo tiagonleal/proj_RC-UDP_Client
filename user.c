@@ -407,7 +407,7 @@ void remove_resource(Session* s, char* filename){
     }
 
     if (strcmp(estado, "OK") == 0){
-        printf("Resource remove Successfully\n");
+        printf("Resource removed Successfully\n");
     }
     else if(strcmp(estado, "NLG") == 0) printf("User not logged in\n");
     else if(strcmp(estado, "UNR") == 0) printf("User not registered\n");
@@ -628,7 +628,7 @@ void print_welcome(Session *s) {
     printf("DS Host: %s\n", s->ip);
     printf("DS IP: %s\n", ds_ip);
     printf("DS Port: %s\n", s->port);
-    printf("Peer TCP Port_ %s\n\n", s->peerport);
+    printf("Peer TCP Port: %s\n\n", s->peerport);
 
     printf(" AVAILABLE COMMANDS\n\n");
     printf(" %-32s  %-32s \n", "Command", "Description");
